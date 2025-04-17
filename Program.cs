@@ -69,31 +69,12 @@ namespace IngameScript
                     throw new Exception(wheelDataResult.ToString());
                 }
                 bool reversePropulsion = wheelDataParser.Get(SectionIdentifier, "reverse propulsion").ToBoolean();
-                this.wheels.Add(new Wheel(wheel, reversePropulsion));
+                wheels.Add(new Wheel(wheel, reversePropulsion));
             }
-        }
-
-        public void Save()
-        {
-            // Called when the program needs to save its state. Use
-            // this method to save your state to the Storage field
-            // or some other means. 
-            // 
-            // This method is optional and can be removed if not
-            // needed.
         }
 
         public void Main(string argument, UpdateType updateSource)
         {
-            // The main entry point of the script, invoked every time
-            // one of the programmable block's Run actions are invoked,
-            // or the script updates itself. The updateSource argument
-            // describes where the update came from. Be aware that the
-            // updateSource is a  bitfield  and might contain more than 
-            // one update type.
-            // 
-            // The method itself is required, but the arguments above
-            // can be removed if not needed.
             switch (argument.ToLower())
             {
                 case "start":
