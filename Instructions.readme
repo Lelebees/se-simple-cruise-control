@@ -2,3 +2,6 @@
 
 Blocks will only be picked up by the script if they have "[SimpleCruiseControl]" (or whatever the SectionIdentifier is)
 in their CustomData
+
+Use "SimpleCruiseControlTextPanel" to mark text panels for log output. You can set a screen number by adding "screen number = x", 
+if your text panel supports multiple screens. 
