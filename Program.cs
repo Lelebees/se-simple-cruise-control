@@ -25,7 +25,11 @@ namespace IngameScript
         private const string SectionIdentifier = "SimpleCruiseControl";
 
         private const string CustomDataPrint = "[" + SectionIdentifier + "]\n" +
-                                               "";
+                                               "[" + OutputTextPanelSectionIdentifier + "]\n" +
+                                               "screen number = 0";
+
+        private const string OutputTextPanelSectionIdentifier = "SimpleCruiseControlTextPanel";
+
 
         private List<IMyLightingBlock> warningLights = new List<IMyLightingBlock>();
 
@@ -35,6 +39,7 @@ namespace IngameScript
 
         private MyIni configDataParser = new MyIni();
 
+        private List<IMyTextSurface> outputSurfaces = new List<IMyTextSurface>();
 
         public Program()
         {
@@ -49,15 +54,60 @@ namespace IngameScript
                 throw new Exception(result.ToString());
             }
 
-            // Collect necessary blocks
-            GridTerminalSystem.GetBlocksOfType<IMyLightingBlock>(warningLights,
+            #region initialize output screens
+
+            List<IMyTerminalBlock> outputBlocks = new List<IMyTerminalBlock>();
+            GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(outputBlocks,
+                block => MyIni.HasSection(block.CustomData, OutputTextPanelSectionIdentifier));
+            int skippedscreens = 0;
+            foreach (IMyTerminalBlock block in outputBlocks)
+            {
+                IMyTextSurface outputSurface;
+                IMyTextSurface surface = block as IMyTextSurface;
+                if (surface != null)
+                {
+                    outputSurface = surface;
+                }
+                else if (block is IMyTextSurfaceProvider)
+                {
+                    MyIni blockConfigParser = new MyIni();
+                    MyIniParseResult configParseResult;
+                    if (!blockConfigParser.TryParse(block.CustomData, out configParseResult))
+                    {
+                        throw new Exception(configParseResult.ToString());
+                    }
+
+                    int surfaceNumber = blockConfigParser.Get(OutputTextPanelSectionIdentifier, "screen number")
+                        .ToInt32();
+                    outputSurface = ((IMyTextSurfaceProvider)block).GetSurface(surfaceNumber);
+                }
+                else
+                {
+                    skippedscreens++;
+                    continue;
+                }
+
+                outputSurface.ContentType = ContentType.TEXT_AND_IMAGE;
+                outputSurfaces.Add(outputSurface);
+            }
+
+            if (outputSurfaces.Count > 0)
+            {
+                Echo = writeToScreens;
+            }
+
+            Echo("Screen setup complete. Skipped " + skippedscreens + " screens");
+
+            #endregion
+
+            GridTerminalSystem.GetBlocksOfType(warningLights,
                 light => MyIni.HasSection(light.CustomData, SectionIdentifier));
             Echo("collected " + warningLights.Count + " lights.");
-            GridTerminalSystem.GetBlocksOfType<IMyShipDrill>(drills,
+            GridTerminalSystem.GetBlocksOfType(drills,
                 drill => MyIni.HasSection(drill.CustomData, SectionIdentifier));
             Echo("collected " + drills.Count + " drills.");
             List<IMyMotorSuspension> tempWheels = new List<IMyMotorSuspension>();
-            GridTerminalSystem.GetBlocksOfType<IMyMotorSuspension>(tempWheels,
+            GridTerminalSystem.GetBlocksOfType(tempWheels,
                 wheel => MyIni.HasSection(wheel.CustomData, SectionIdentifier));
             Echo("collected " + tempWheels.Count + " wheels.");
             foreach (IMyMotorSuspension wheel in tempWheels)
@@ -68,6 +118,7 @@ namespace IngameScript
                 {
                     throw new Exception(wheelDataResult.ToString());
                 }
+
                 bool reversePropulsion = wheelDataParser.Get(SectionIdentifier, "reverse propulsion").ToBoolean();
                 wheels.Add(new Wheel(wheel, reversePropulsion));
             }
@@ -119,6 +170,14 @@ namespace IngameScript
             foreach (Wheel wheel in wheels)
             {
                 wheel.StopCruise();
+            }
+        }
+
+        private void writeToScreens(string text)
+        {
+            foreach (IMyTextSurface surface in outputSurfaces)
+            {
+                surface.WriteText(text + "\n", true);
             }
         }
     }
