@@ -22,30 +22,28 @@ namespace IngameScript
 {
     public partial class Program : MyGridProgram
     {
-        private const string SectionIdentifier = "SimpleCruiseControl";
+        private const string SectionIdentifier = "CruiseControlConfig";
 
-        private const string CustomDataPrint = "[" + SectionIdentifier + "]\n" +
-                                               "[" + OutputTextPanelSectionIdentifier + "]\n" +
-                                               "screen number = 0";
+        private const string DefaultCustomData = "[" + SectionIdentifier + "]\n" +
+                                                 "[" + LogDisplaySectionIdentifier + "]\n" +
+                                                 "screen number = 0";
 
-        private const string OutputTextPanelSectionIdentifier = "SimpleCruiseControlTextPanel";
+        private const string LogDisplaySectionIdentifier = "CCLogConfig";
+        private const string ToggleSectionIdentifier = "CCToggle";
 
+        private readonly List<ToggleBlock> blocksToToggle = new List<ToggleBlock>();
 
-        private List<IMyLightingBlock> warningLights = new List<IMyLightingBlock>();
+        private readonly MyIni configDataParser = new MyIni();
 
-        private List<IMyShipDrill> drills = new List<IMyShipDrill>();
+        private readonly List<IMyTextSurface> outputSurfaces = new List<IMyTextSurface>();
 
-        private List<Wheel> wheels = new List<Wheel>();
-
-        private MyIni configDataParser = new MyIni();
-
-        private List<IMyTextSurface> outputSurfaces = new List<IMyTextSurface>();
+        private readonly List<Wheel> wheels = new List<Wheel>();
 
         public Program()
         {
             if (Me.CustomData == String.Empty)
             {
-                Me.CustomData = CustomDataPrint;
+                Me.CustomData = DefaultCustomData;
             }
 
             MyIniParseResult result;
@@ -54,12 +52,60 @@ namespace IngameScript
                 throw new Exception(result.ToString());
             }
 
-            #region initialize output screens
+            InitializeLogScreens();
+            InitializeToggleBlocks();
+            InitializeWheels();
+        }
 
+        private void InitializeWheels()
+        {
+            List<IMyMotorSuspension> tempWheels = new List<IMyMotorSuspension>();
+            GridTerminalSystem.GetBlocksOfType(tempWheels,
+                wheel => MyIni.HasSection(wheel.CustomData, SectionIdentifier));
+            MyIni wheelDataParser = new MyIni();
+            foreach (IMyMotorSuspension wheel in tempWheels)
+            {
+                MyIniParseResult wheelDataResult;
+                if (!wheelDataParser.TryParse(wheel.CustomData, out wheelDataResult))
+                {
+                    throw new Exception(wheelDataResult.ToString());
+                }
+
+                bool reversePropulsion = wheelDataParser.Get(SectionIdentifier, "reverse propulsion").ToBoolean();
+                wheels.Add(new Wheel(wheel, reversePropulsion));
+            }
+
+            Echo("collected " + wheels.Count + " wheels.");
+        }
+
+        private void InitializeToggleBlocks()
+        {
+            List<IMyFunctionalBlock> functionalToggleBlocks = new List<IMyFunctionalBlock>();
+            GridTerminalSystem.GetBlocksOfType(functionalToggleBlocks,
+                block => MyIni.HasSection(block.CustomData, ToggleSectionIdentifier));
+            MyIni blockConfigParser = new MyIni();
+            foreach (IMyFunctionalBlock block in functionalToggleBlocks)
+            {
+                MyIniParseResult blockConfig;
+                if (!blockConfigParser.TryParse(block.CustomData, out blockConfig))
+                {
+                    throw new Exception(blockConfig.ToString());
+                }
+
+                bool invertToggle = blockConfigParser.Get(ToggleSectionIdentifier, "invert toggle").ToBoolean();
+                blocksToToggle.Add(new ToggleBlock(block, invertToggle));
+            }
+
+            Echo($"collected {functionalToggleBlocks.Count} blocks to toggle.");
+        }
+
+        private void InitializeLogScreens()
+        {
             List<IMyTerminalBlock> outputBlocks = new List<IMyTerminalBlock>();
             GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(outputBlocks,
-                block => MyIni.HasSection(block.CustomData, OutputTextPanelSectionIdentifier));
+                block => MyIni.HasSection(block.CustomData, LogDisplaySectionIdentifier));
             int skippedscreens = 0;
+            MyIni blockConfigParser = new MyIni();
             foreach (IMyTerminalBlock block in outputBlocks)
             {
                 IMyTextSurface outputSurface;
@@ -70,14 +116,13 @@ namespace IngameScript
                 }
                 else if (block is IMyTextSurfaceProvider)
                 {
-                    MyIni blockConfigParser = new MyIni();
                     MyIniParseResult configParseResult;
                     if (!blockConfigParser.TryParse(block.CustomData, out configParseResult))
                     {
                         throw new Exception(configParseResult.ToString());
                     }
 
-                    int surfaceNumber = blockConfigParser.Get(OutputTextPanelSectionIdentifier, "screen number")
+                    int surfaceNumber = blockConfigParser.Get(LogDisplaySectionIdentifier, "screen number")
                         .ToInt32();
                     outputSurface = ((IMyTextSurfaceProvider)block).GetSurface(surfaceNumber);
                 }
@@ -93,35 +138,10 @@ namespace IngameScript
 
             if (outputSurfaces.Count > 0)
             {
-                Echo = writeToScreens;
+                Echo = WriteToScreens;
             }
 
             Echo("Screen setup complete. Skipped " + skippedscreens + " screens");
-
-            #endregion
-
-            GridTerminalSystem.GetBlocksOfType(warningLights,
-                light => MyIni.HasSection(light.CustomData, SectionIdentifier));
-            Echo("collected " + warningLights.Count + " lights.");
-            GridTerminalSystem.GetBlocksOfType(drills,
-                drill => MyIni.HasSection(drill.CustomData, SectionIdentifier));
-            Echo("collected " + drills.Count + " drills.");
-            List<IMyMotorSuspension> tempWheels = new List<IMyMotorSuspension>();
-            GridTerminalSystem.GetBlocksOfType(tempWheels,
-                wheel => MyIni.HasSection(wheel.CustomData, SectionIdentifier));
-            Echo("collected " + tempWheels.Count + " wheels.");
-            foreach (IMyMotorSuspension wheel in tempWheels)
-            {
-                MyIni wheelDataParser = new MyIni();
-                MyIniParseResult wheelDataResult;
-                if (!wheelDataParser.TryParse(wheel.CustomData, out wheelDataResult))
-                {
-                    throw new Exception(wheelDataResult.ToString());
-                }
-
-                bool reversePropulsion = wheelDataParser.Get(SectionIdentifier, "reverse propulsion").ToBoolean();
-                wheels.Add(new Wheel(wheel, reversePropulsion));
-            }
         }
 
         public void Main(string argument, UpdateType updateSource)
@@ -129,51 +149,41 @@ namespace IngameScript
             switch (argument.ToLower())
             {
                 case "start":
-                    StartDrills();
+                    Start();
                     break;
                 case "stop":
-                    StopDrills();
+                    Stop();
                     break;
             }
         }
 
-        private void StartDrills()
+        private void Start()
         {
-            foreach (IMyShipDrill drill in drills)
-            {
-                drill.Enabled = true;
-            }
-
-            foreach (IMyLightingBlock light in warningLights)
-            {
-                light.Enabled = true;
-            }
-
             foreach (Wheel wheel in wheels)
             {
                 wheel.StartCruise();
             }
+
+            foreach (ToggleBlock block in blocksToToggle)
+            {
+                block.Enable();
+            }
         }
 
-        private void StopDrills()
+        private void Stop()
         {
-            foreach (IMyShipDrill drill in drills)
-            {
-                drill.Enabled = false;
-            }
-
-            foreach (IMyLightingBlock light in warningLights)
-            {
-                light.Enabled = false;
-            }
-
             foreach (Wheel wheel in wheels)
             {
                 wheel.StopCruise();
             }
+
+            foreach (ToggleBlock block in blocksToToggle)
+            {
+                block.Disable();
+            }
         }
 
-        private void writeToScreens(string text)
+        private void WriteToScreens(string text)
         {
             foreach (IMyTextSurface surface in outputSurfaces)
             {
